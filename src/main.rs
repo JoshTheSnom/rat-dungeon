@@ -6,9 +6,12 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::widgets::Paragraph;
+use ratatui::prelude::Color;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use std::io::{Result, Stdout, Write, stdout};
-use ratatui::text::Line;
+use crossterm::style::style;
 
 const ROOM_W: u16 = 40;
 const ROOM_H: u16 = 20;
@@ -31,14 +34,22 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> bool {
         match key_event.code {
-            KeyCode::Left => self.x -= 1,
-            KeyCode::Right => self.x += 1,
-            KeyCode::Up => self.y -= 1,
-            KeyCode::Down => self.y += 1,
+            KeyCode::Left => self.try_move(-1, 0),
+            KeyCode::Right => self.try_move(1, 0),
+            KeyCode::Up => self.try_move(0, -1),
+            KeyCode::Down => self.try_move(0, 1),
             KeyCode::Char('q') => return false,
             _ => {}
         }
         true
+    }
+
+    fn try_move(&mut self, dx: i16, dy: i16) {
+        let nx = (self.x + dx).clamp(0, ROOM_W as i16 - 1);
+        let ny = (self.y + dy).clamp(0, ROOM_H as i16 - 1);
+
+        self.x = nx;
+        self.y = ny;
     }
 }
 
@@ -54,8 +65,9 @@ fn main() -> Result<()> {
     \nGood luck."
     );
 
-    enable_raw_mode()?;
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
+    enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
@@ -63,8 +75,10 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let res = run(&mut terminal);
+
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
     res
 }
 
@@ -72,11 +86,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut app = App::new();
 
     loop {
-        terminal.draw(|mut f| {
-            let area = Rect::new(app.x as u16, app.y as u16, 1, 1);
-            let p = Paragraph::new("@");
-            f.render_widget(p, area);
-        })?;
+        terminal.draw(|f| draw(f, &app))?;
 
         if let Event::Key(key_event) = event::read()? {
             if key_event.kind == KeyEventKind::Press {
@@ -100,8 +110,34 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
 
     // Dungeon room
 
-    let mut cells: Vec<Vec<char>> = vec![vec!['.'; ROOM_W as usize]; ROOM_H as usize];
+    let floor_style = Style::default().fg(Color::DarkGray);
+    let player_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
 
-    cells[app.y as usize][app.x as usize] = '@';
-    
+    let mut cells: Vec<Vec<(char, Style)>> =
+        vec![vec![('.', floor_style); ROOM_W as usize]; ROOM_H as usize];
+
+    cells[app.y as usize][app.x as usize] = ('@', player_style);
+
+    let lines: Vec<Line> = cells
+        .iter()
+        .map(|row| {
+            Line::from(
+                row.iter()
+                    .map(|&(ch, st)| Span::styled(ch.to_string(), st))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+
+    let room = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Dungeon Room")
+            .style(Style::default().fg(Color::White)),
+    );
+    f.render_widget(room, game_area);
 }
+
+
