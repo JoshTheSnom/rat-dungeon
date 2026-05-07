@@ -1,5 +1,6 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::execute;
+use crossterm::style::style;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
@@ -11,10 +12,9 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use std::io::{Result, Stdout, Write, stdout};
-use crossterm::style::style;
 
-const ROOM_W: u16 = 40;
-const ROOM_H: u16 = 20;
+const ROOM_W: i16 = 40;
+const ROOM_H: i16 = 20;
 
 enum Action {
     Move(i16, i16),
@@ -22,14 +22,32 @@ enum Action {
     None,
 }
 
-struct App {
+struct Enemy {
     x: i16,
     y: i16,
 }
 
+impl Enemy {
+    fn new(x: i16, y: i16) -> Self {
+        Self { x, y }
+    }
+}
+
+struct App {
+    x: i16,
+    y: i16,
+    enemies: Vec<Enemy>,
+}
+
 impl App {
     fn new() -> Self {
-        Self { x: 1, y: 1 }
+        let mut app = Self {
+            x: 1,
+            y: 1,
+            enemies: Vec::new(),
+        };
+        app.spawn_enemies();
+        app
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> bool {
@@ -45,11 +63,19 @@ impl App {
     }
 
     fn try_move(&mut self, dx: i16, dy: i16) {
-        let nx = (self.x + dx).clamp(0, ROOM_W as i16 - 1);
-        let ny = (self.y + dy).clamp(0, ROOM_H as i16 - 1);
+        let nx = (self.x + dx).clamp(0, ROOM_W - 1);
+        let ny = (self.y + dy).clamp(0, ROOM_H - 1);
 
         self.x = nx;
         self.y = ny;
+    }
+
+    fn spawn_enemies(&mut self) {
+        let specs: &[(i16, i16)] = &[
+            (3, 3),
+            (ROOM_W - 4, 4),
+            (ROOM_W / 2, ROOM_H / 2)];
+        self.enemies = specs.iter().map(|&(x,y)| Enemy::new(x,y)).collect();
     }
 }
 
@@ -118,6 +144,15 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
     let mut cells: Vec<Vec<(char, Style)>> =
         vec![vec![('.', floor_style); ROOM_W as usize]; ROOM_H as usize];
 
+    for enemy in app.enemies.iter() {
+        let gx = enemy.x as usize;
+        let gy = enemy.y as usize;
+
+        let e_style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+        cells[gy][gx] = ('*', e_style);
+    }
+
+
     cells[app.y as usize][app.x as usize] = ('@', player_style);
 
     let lines: Vec<Line> = cells
@@ -139,5 +174,3 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
     );
     f.render_widget(room, game_area);
 }
-
-
